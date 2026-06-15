@@ -14,6 +14,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { defaultState } from './src/seed';
 import { loadSparkWeaveState, saveSparkWeaveState } from './src/storage';
 import { fonts, getTheme, SparkTheme } from './src/theme';
@@ -30,6 +31,15 @@ const tabItems: Array<{ id: AppTab; label: string; symbol: string }> = [
 ];
 
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <SparkWeaveApp />
+    </SafeAreaProvider>
+  );
+}
+
+function SparkWeaveApp() {
+  const insets = useSafeAreaInsets();
   const [sparkState, setSparkState] = useState<SparkWeaveState>(defaultState);
   const [hydrated, setHydrated] = useState(false);
   const [activeTab, setActiveTab] = useState<AppTab>('today');
@@ -118,7 +128,13 @@ export default function App() {
       <StatusBar style={theme.isDark ? 'light' : 'dark'} />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: 118 }]}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingBottom: insets.bottom + 118,
+            paddingTop: insets.top + 26,
+          },
+        ]}
       >
         <TopBar theme={theme} onOpenSettings={() => setSettingsOpen(true)} />
 
@@ -170,6 +186,7 @@ export default function App() {
 
       <BottomBar
         activeTab={activeTab}
+        bottomInset={insets.bottom}
         onChangeTab={setActiveTab}
         onOpenCapture={() => setCaptureOpen(true)}
         theme={theme}
@@ -522,17 +539,28 @@ function ProjectsScreen({
 
 function BottomBar({
   activeTab,
+  bottomInset,
   onChangeTab,
   onOpenCapture,
   theme,
 }: {
   activeTab: AppTab;
+  bottomInset: number;
   onChangeTab: (tab: AppTab) => void;
   onOpenCapture: () => void;
   theme: SparkTheme;
 }) {
   return (
-    <View style={[styles.bottomBar, { backgroundColor: theme.colors.surface, borderColor: theme.colors.line }]}>
+    <View
+      style={[
+        styles.bottomBar,
+        {
+          backgroundColor: theme.colors.surface,
+          borderColor: theme.colors.line,
+          bottom: bottomInset + 14,
+        },
+      ]}
+    >
       {tabItems.slice(0, 2).map((item) => (
         <TabButton key={item.id} active={activeTab === item.id} item={item} onPress={() => onChangeTab(item.id)} theme={theme} />
       ))}
