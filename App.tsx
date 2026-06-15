@@ -1,4 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
+import { LinearGradient } from 'expo-linear-gradient';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -19,15 +20,16 @@ import { defaultState } from './src/seed';
 import { loadSparkWeaveState, saveSparkWeaveState } from './src/storage';
 import { fonts, getTheme, SparkTheme } from './src/theme';
 import type { AppTab, Capture, Project, SparkWeaveState, ThemeMode } from './src/types';
+import { IconGlyph, type SparkIconName, WeaveConstellation } from './src/visuals';
 import { buildWeaveClusters } from './src/weave';
 
 const tagOptions = ['产品', '视觉', '编织', '存储', '写作', '复盘', 'AI', '执行'];
 
-const tabItems: Array<{ id: AppTab; label: string; symbol: string }> = [
-  { id: 'today', label: '今日', symbol: '今' },
-  { id: 'inbox', label: '收件箱', symbol: '收' },
-  { id: 'weave', label: '编织', symbol: '织' },
-  { id: 'projects', label: '项目', symbol: '项' },
+const tabItems: Array<{ id: AppTab; label: string; icon: SparkIconName }> = [
+  { id: 'today', label: '今日', icon: 'circle' },
+  { id: 'inbox', label: '收件箱', icon: 'inbox' },
+  { id: 'weave', label: '编织', icon: 'network' },
+  { id: 'projects', label: '项目', icon: 'folder' },
 ];
 
 export default function App() {
@@ -132,7 +134,7 @@ function SparkWeaveApp() {
           styles.scrollContent,
           {
             paddingBottom: insets.bottom + 118,
-            paddingTop: insets.top + 26,
+            paddingTop: insets.top + 8,
           },
         ]}
       >
@@ -250,7 +252,7 @@ function TopBar({ theme, onOpenSettings }: { theme: SparkTheme; onOpenSettings: 
         onPress={onOpenSettings}
         style={[styles.iconButton, { borderColor: theme.colors.line, backgroundColor: theme.colors.surface }]}
       >
-        <Text style={{ color: theme.colors.ink, fontFamily: fonts.body, fontSize: 18 }}>设</Text>
+        <IconGlyph color={theme.colors.ink} name="settings" size={20} strokeWidth={1.7} />
       </Pressable>
     </View>
   );
@@ -283,23 +285,36 @@ function TodayScreen({
 
   return (
     <View style={styles.screenStack}>
-      <View style={[styles.heroPanel, panelStyle(theme)]}>
-        <Text selectable style={[styles.kicker, { color: theme.colors.coral }]}>
-          今日工作台
-        </Text>
+      <LinearGradient
+        colors={[theme.colors.surface, theme.colors.surfaceWarm, theme.colors.surface]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.heroPanel, panelStyle(theme)]}
+      >
+        <View style={styles.kickerRow}>
+          <IconGlyph color={theme.colors.coral} name="sparkles" size={15} strokeWidth={1.8} />
+          <Text selectable style={[styles.kicker, { color: theme.colors.coral }]}>
+            今日工作台
+          </Text>
+        </View>
         <Text selectable style={[styles.heroTitle, { color: theme.colors.ink }]}>
           先捕捉，再编织。
         </Text>
         <Text selectable style={[styles.heroCopy, { color: theme.colors.muted }]}>
-          今天只展示最该行动的线索，细节留给收件箱、编织图谱和项目页。
+          只保留今天真正需要行动的线索，其余交给收件箱慢慢沉淀。
         </Text>
-        <Pressable accessibilityRole="button" onPress={onOpenCapture} style={styles.captureInput}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={onOpenCapture}
+          style={[styles.captureInput, { borderColor: theme.colors.line, backgroundColor: theme.colors.surface }]}
+        >
+          <IconGlyph color={theme.colors.muted} name="search" size={18} strokeWidth={1.8} />
           <Text style={[styles.capturePlaceholder, { color: theme.colors.muted }]}>写下一个刚出现的想法...</Text>
           <View style={[styles.smallAction, { backgroundColor: theme.colors.ink }]}>
             <Text style={[styles.smallActionText, { color: theme.colors.background }]}>捕捉</Text>
           </View>
         </Pressable>
-      </View>
+      </LinearGradient>
 
       <View style={styles.metricGrid}>
         <MetricCard label="待整理" value={String(inboxCount)} tone={theme.colors.cobalt} theme={theme} />
@@ -328,7 +343,7 @@ function TodayScreen({
       <SectionHeader label="编织洞察" theme={theme} />
       {leadCluster ? (
         <View style={[styles.card, panelStyle(theme)]}>
-          <NodePreview theme={theme} />
+          <WeaveConstellation compact clusters={clusters.slice(0, 4)} theme={theme} />
           <Text selectable style={[styles.cardTitle, { color: theme.colors.ink }]}>
             {leadCluster.title}
           </Text>
@@ -435,26 +450,7 @@ function WeaveScreen({
     <View style={styles.screenStack}>
       <ScreenTitle title="编织" copy="本地规则会解释为什么这些想法应该靠近。" theme={theme} />
       <View style={[styles.mapPanel, panelStyle(theme)]}>
-        <View style={[styles.mapLine, { backgroundColor: theme.colors.line, transform: [{ rotate: '12deg' }] }]} />
-        <View style={[styles.mapLine, { backgroundColor: theme.colors.line, transform: [{ rotate: '-18deg' }], top: 132 }]} />
-        {clusters.slice(0, 5).map((cluster, index) => (
-          <View
-            key={cluster.id}
-            style={[
-              styles.mapNode,
-              {
-                left: 22 + (index % 2) * 146,
-                top: 26 + index * 46,
-                borderColor: [theme.colors.sage, theme.colors.cobalt, theme.colors.coral, theme.colors.violet][index % 4],
-              },
-            ]}
-          >
-            <Text selectable style={[styles.nodeTitle, { color: theme.colors.ink }]}>
-              {cluster.title}
-            </Text>
-            <Text style={[styles.nodeMeta, { color: theme.colors.muted }]}>{cluster.captureIds.length} 条</Text>
-          </View>
-        ))}
+        <WeaveConstellation clusters={clusters.slice(0, 5)} theme={theme} />
       </View>
 
       {clusters.map((cluster) => (
@@ -565,7 +561,7 @@ function BottomBar({
         <TabButton key={item.id} active={activeTab === item.id} item={item} onPress={() => onChangeTab(item.id)} theme={theme} />
       ))}
       <Pressable accessibilityRole="button" onPress={onOpenCapture} style={[styles.fab, { backgroundColor: theme.colors.ink }]}>
-        <Text style={[styles.fabText, { color: theme.colors.background }]}>+</Text>
+        <IconGlyph color={theme.colors.background} name="plus" size={30} strokeWidth={2.4} />
       </Pressable>
       {tabItems.slice(2).map((item) => (
         <TabButton key={item.id} active={activeTab === item.id} item={item} onPress={() => onChangeTab(item.id)} theme={theme} />
@@ -581,13 +577,13 @@ function TabButton({
   theme,
 }: {
   active: boolean;
-  item: { id: AppTab; label: string; symbol: string };
+  item: (typeof tabItems)[number];
   onPress: () => void;
   theme: SparkTheme;
 }) {
   return (
     <Pressable accessibilityRole="tab" onPress={onPress} style={styles.tabButton}>
-      <Text style={[styles.tabSymbol, { color: active ? theme.colors.ink : theme.colors.muted }]}>{item.symbol}</Text>
+      <IconGlyph color={active ? theme.colors.ink : theme.colors.muted} name={item.icon} size={22} strokeWidth={active ? 2 : 1.7} />
       <Text style={[styles.tabLabel, { color: active ? theme.colors.ink : theme.colors.muted }]}>{item.label}</Text>
     </Pressable>
   );
@@ -713,7 +709,7 @@ function CaptureDetailSheet({
       <TagRow tags={capture.tags} theme={theme} />
       <InfoBlock label="项目" value={project?.name ?? '未归属'} theme={theme} />
       <InfoBlock label="下一步" value={capture.nextAction ?? '等待整理'} theme={theme} />
-      <NodePreview theme={theme} />
+      <WeaveConstellation compact clusters={[]} theme={theme} />
       <View style={styles.actionRow}>
         <MiniButton label="设为推进" onPress={() => onUpdateCapture(capture.id, { status: 'active' })} theme={theme} />
         <MiniButton label="完成" onPress={() => onUpdateCapture(capture.id, { status: 'done' })} theme={theme} />
@@ -835,7 +831,7 @@ function SettingsSheet({
       </View>
       <View style={[styles.darkPreview, { backgroundColor: '#171615', borderColor: '#38332d' }]}>
         <Text style={[styles.cardTitle, { color: '#f5efe6' }]}>深色编织预览</Text>
-        <NodePreview theme={getTheme('dark')} />
+        <WeaveConstellation compact clusters={[]} theme={getTheme('dark')} />
       </View>
     </BaseSheet>
   );
@@ -900,14 +896,20 @@ function SectionHeader({ label, theme }: { label: string; theme: SparkTheme }) {
 }
 
 function MetricCard({ label, value, tone, theme }: { label: string; value: string; tone: string; theme: SparkTheme }) {
+  const iconName: SparkIconName = label === '待整理' ? 'inbox' : label === '推进中' ? 'timer' : 'check';
   return (
     <View style={[styles.metricCard, panelStyle(theme)]}>
-      <Text selectable style={[styles.metricValue, { color: tone }]}>
-        {value}
-      </Text>
-      <Text selectable style={[styles.caption, { color: theme.colors.muted }]}>
-        {label}
-      </Text>
+      <View style={[styles.metricIcon, { borderColor: `${tone}55`, backgroundColor: `${tone}12` }]}>
+        <IconGlyph color={tone} name={iconName} size={16} strokeWidth={1.9} />
+      </View>
+      <View>
+        <Text selectable style={[styles.metricValue, { color: tone }]}>
+          {value}
+        </Text>
+        <Text selectable style={[styles.caption, { color: theme.colors.muted }]}>
+          {label}
+        </Text>
+      </View>
     </View>
   );
 }
@@ -928,28 +930,6 @@ function Progress({ value, theme }: { value: number; theme: SparkTheme }) {
   return (
     <View style={[styles.progressTrack, { backgroundColor: theme.colors.surfaceSoft }]}>
       <View style={[styles.progressFill, { backgroundColor: theme.colors.sage, width: `${Math.round(value * 100)}%` }]} />
-    </View>
-  );
-}
-
-function NodePreview({ theme }: { theme: SparkTheme }) {
-  return (
-    <View style={styles.nodePreview}>
-      <View style={[styles.previewLine, { backgroundColor: theme.colors.line, transform: [{ rotate: '-12deg' }] }]} />
-      <View style={[styles.previewLine, { backgroundColor: theme.colors.line, top: 42, transform: [{ rotate: '14deg' }] }]} />
-      {[theme.colors.sage, theme.colors.cobalt, theme.colors.coral, theme.colors.violet].map((color, index) => (
-        <View
-          key={color}
-          style={[
-            styles.previewNode,
-            {
-              borderColor: color,
-              left: 18 + index * 58,
-              top: index % 2 === 0 ? 14 : 48,
-            },
-          ]}
-        />
-      ))}
     </View>
   );
 }
@@ -1039,8 +1019,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   brand: {
-    fontFamily: fonts.display,
-    fontSize: 32,
+    fontFamily: fonts.latinDisplay,
+    fontSize: 31,
     letterSpacing: 0,
     lineHeight: 39,
   },
@@ -1066,7 +1046,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     gap: 12,
+    overflow: 'hidden',
     padding: 18,
+  },
+  kickerRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
   },
   kicker: {
     fontFamily: fonts.body,
@@ -1074,19 +1060,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   heroTitle: {
-    fontFamily: fonts.display,
-    fontSize: 40,
+    fontFamily: fonts.displayBold,
+    fontSize: 31,
     letterSpacing: 0,
-    lineHeight: 48,
+    lineHeight: 39,
   },
   heroCopy: {
     fontFamily: fonts.body,
-    fontSize: 15,
-    lineHeight: 23,
+    fontSize: 13,
+    lineHeight: 20,
   },
   captureInput: {
     alignItems: 'center',
-    borderColor: '#ded6c8',
     borderCurve: 'continuous',
     borderRadius: 8,
     borderWidth: 1,
@@ -1116,16 +1101,26 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   metricCard: {
+    alignItems: 'flex-start',
     borderCurve: 'continuous',
     borderRadius: 8,
     borderWidth: 1,
     flex: 1,
-    gap: 2,
-    padding: 14,
+    gap: 9,
+    minHeight: 84,
+    padding: 12,
+  },
+  metricIcon: {
+    alignItems: 'center',
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 30,
+    justifyContent: 'center',
+    width: 30,
   },
   metricValue: {
-    fontFamily: fonts.display,
-    fontSize: 30,
+    fontFamily: fonts.latinDisplay,
+    fontSize: 31,
     lineHeight: 34,
   },
   sectionHeader: {
@@ -1134,7 +1129,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   sectionTitle: {
-    fontFamily: fonts.display,
+    fontFamily: fonts.displayBold,
     fontSize: 20,
     lineHeight: 26,
   },
@@ -1150,7 +1145,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   cardTitle: {
-    fontFamily: fonts.display,
+    fontFamily: fonts.displayBold,
     fontSize: 21,
     lineHeight: 28,
   },
@@ -1260,7 +1255,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     height: 292,
     overflow: 'hidden',
-    padding: 14,
+    padding: 12,
   },
   mapLine: {
     height: 1,
@@ -1321,7 +1316,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   tabSymbol: {
-    fontFamily: fonts.display,
+    fontFamily: fonts.displayBold,
     fontSize: 18,
     lineHeight: 21,
   },
@@ -1365,7 +1360,7 @@ const styles = StyleSheet.create({
     width: 40,
   },
   sheetTitle: {
-    fontFamily: fonts.display,
+    fontFamily: fonts.displayBold,
     fontSize: 32,
     lineHeight: 39,
   },
@@ -1407,7 +1402,7 @@ const styles = StyleSheet.create({
     width: 168,
   },
   focusTime: {
-    fontFamily: fonts.display,
+    fontFamily: fonts.latinDisplay,
     fontSize: 42,
     lineHeight: 48,
   },
@@ -1445,8 +1440,13 @@ const styles = StyleSheet.create({
     width: 22,
   },
   screenTitle: {
-    fontFamily: fonts.display,
+    fontFamily: fonts.displayBold,
     fontSize: 34,
     lineHeight: 42,
+  },
+  constellation: {
+    borderCurve: 'continuous',
+    borderRadius: 8,
+    overflow: 'hidden',
   },
 });

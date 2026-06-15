@@ -50,7 +50,9 @@ Dark mode:
 - Use thin dividers and restrained shadows.
 - Bottom tabs stay clear and stable.
 - The central capture action is the main daily affordance.
-- Weave graphics use node-card relationships, not decoration.
+- Weave graphics use SVG node-card relationships, not decorative placeholder lines.
+- Icons should be lightweight SVG glyphs or native symbols, not text-character stand-ins.
+- Subtle gradients may be used for paper warmth, but they should not become hero-style decoration.
 - Do not place cards inside cards.
 
 ## Implementation Notes
