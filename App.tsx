@@ -1,8 +1,9 @@
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { ReactNode } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
   KeyboardAvoidingView,
   Modal,
   Pressable,
@@ -13,23 +14,42 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
   ViewStyle,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { defaultState } from './src/seed';
 import { loadSparkWeaveState, saveSparkWeaveState } from './src/storage';
 import { fonts, getTheme, SparkTheme } from './src/theme';
-import type { AppTab, Capture, Project, SparkWeaveState, ThemeMode } from './src/types';
+import type { AppTab, Capture, FeedbackEntry, Project, SparkWeaveState, ThemeMode } from './src/types';
 import { IconGlyph, type SparkIconName, WeaveConstellation } from './src/visuals';
 import { buildWeaveClusters } from './src/weave';
 
 const tagOptions = ['产品', '视觉', '编织', '存储', '写作', '复盘', 'AI', '执行'];
 
 const tabItems: Array<{ id: AppTab; label: string; icon: SparkIconName }> = [
-  { id: 'today', label: '今日', icon: 'circle' },
   { id: 'inbox', label: '收件箱', icon: 'inbox' },
   { id: 'weave', label: '编织', icon: 'network' },
-  { id: 'projects', label: '项目', icon: 'folder' },
+  { id: 'outputs', label: '产物', icon: 'folder' },
+  { id: 'profile', label: '主页', icon: 'circle' },
+];
+
+const bannerCopy: Record<AppTab, string> = {
+  inbox: '收件箱 · 先收进来',
+  weave: '编织 · 解释关系',
+  outputs: '产物 · 沉淀结果',
+  profile: '主页 · 今日推进',
+};
+
+type InboxFilterId = 'all' | 'inbox' | 'active' | 'project' | 'archived';
+type InboxViewMode = 'list' | 'carousel';
+
+const inboxFilters: Array<{ id: InboxFilterId; label: string }> = [
+  { id: 'all', label: '全部' },
+  { id: 'inbox', label: '待整理' },
+  { id: 'active', label: '推进中' },
+  { id: 'project', label: '有归属' },
+  { id: 'archived', label: '已归档' },
 ];
 
 export default function App() {
@@ -42,9 +62,10 @@ export default function App() {
 
 function SparkWeaveApp() {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const [sparkState, setSparkState] = useState<SparkWeaveState>(defaultState);
   const [hydrated, setHydrated] = useState(false);
-  const [activeTab, setActiveTab] = useState<AppTab>('today');
+  const [activeTab, setActiveTab] = useState<AppTab>('inbox');
   const [captureOpen, setCaptureOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [focusProject, setFocusProject] = useState<Project | null>(null);
@@ -120,39 +141,50 @@ function SparkWeaveApp() {
     setSparkState((current) => ({ ...current, themeMode }));
   }
 
+  function setDailyAssistantEnabled(dailyAssistantEnabled: boolean) {
+    setSparkState((current) => ({
+      ...current,
+      settings: {
+        ...current.settings,
+        dailyAssistantEnabled,
+      },
+    }));
+  }
+
+  function addFeedback(feedback: Omit<FeedbackEntry, 'id' | 'createdAt'>) {
+    setSparkState((current) => ({
+      ...current,
+      feedback: [
+        {
+          ...feedback,
+          id: `feedback-${Date.now()}`,
+          createdAt: new Date().toISOString(),
+        },
+        ...current.feedback,
+      ],
+    }));
+  }
+
   const activeCaptures = sparkState.captures.filter((capture) => capture.status === 'active');
   const inboxCaptures = sparkState.captures.filter((capture) => capture.status === 'inbox');
   const doneCaptures = sparkState.captures.filter((capture) => capture.status === 'done');
   const activeProjects = sparkState.projects.filter((project) => project.status !== 'archived');
+  const compactPhone = width <= 390;
 
   return (
     <View style={[styles.app, { backgroundColor: theme.colors.background }]}>
       <StatusBar style={theme.isDark ? 'light' : 'dark'} />
       <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
+        contentInsetAdjustmentBehavior="never"
         contentContainerStyle={[
           styles.scrollContent,
           {
             paddingBottom: insets.bottom + 118,
-            paddingTop: insets.top + 8,
+            paddingTop: Math.max(insets.top + 4, 48),
           },
         ]}
       >
-        <TopBar theme={theme} onOpenSettings={() => setSettingsOpen(true)} />
-
-        {activeTab === 'today' ? (
-          <TodayScreen
-            activeCaptures={activeCaptures}
-            clusters={clusters}
-            doneCount={doneCaptures.length}
-            inboxCount={inboxCaptures.length}
-            onOpenCapture={() => setCaptureOpen(true)}
-            onOpenCaptureDetail={setSelectedCapture}
-            onOpenProject={setSelectedProject}
-            projects={activeProjects}
-            theme={theme}
-          />
-        ) : null}
+        <CenteredBanner activeTab={activeTab} theme={theme} />
 
         {activeTab === 'inbox' ? (
           <InboxScreen
@@ -171,12 +203,13 @@ function SparkWeaveApp() {
             captures={sparkState.captures}
             clusters={clusters}
             onOpenCapture={setSelectedCapture}
+            compactPhone={compactPhone}
             theme={theme}
           />
         ) : null}
 
-        {activeTab === 'projects' ? (
-          <ProjectsScreen
+        {activeTab === 'outputs' ? (
+          <OutputsScreen
             captures={sparkState.captures}
             onFocusProject={setFocusProject}
             onOpenProject={setSelectedProject}
@@ -184,7 +217,35 @@ function SparkWeaveApp() {
             theme={theme}
           />
         ) : null}
+
+        {activeTab === 'profile' ? (
+          <ProfileScreen
+            activeCaptures={activeCaptures}
+            clusters={clusters}
+            dailyAssistantEnabled={sparkState.settings.dailyAssistantEnabled}
+            doneCount={doneCaptures.length}
+            inboxCount={inboxCaptures.length}
+            onOpenCapture={() => setCaptureOpen(true)}
+            onOpenCaptureDetail={setSelectedCapture}
+            onOpenSettings={() => setSettingsOpen(true)}
+            onOpenProject={setSelectedProject}
+            projects={activeProjects}
+            compactPhone={compactPhone}
+            theme={theme}
+          />
+        ) : null}
       </ScrollView>
+
+      <View
+        pointerEvents="none"
+        style={[
+          styles.bottomBarBackdrop,
+          {
+            backgroundColor: theme.colors.background,
+            height: insets.bottom + 112,
+          },
+        ]}
+      />
 
       <BottomBar
         activeTab={activeTab}
@@ -212,6 +273,8 @@ function SparkWeaveApp() {
 
       <ProjectDetailSheet
         captures={sparkState.captures}
+        feedback={sparkState.feedback}
+        onAddFeedback={addFeedback}
         onClose={() => setSelectedProject(null)}
         onFocusProject={setFocusProject}
         project={selectedProject}
@@ -227,6 +290,7 @@ function SparkWeaveApp() {
 
       <SettingsSheet
         onClose={() => setSettingsOpen(false)}
+        onSetDailyAssistantEnabled={setDailyAssistantEnabled}
         onSetTheme={setThemeMode}
         state={sparkState}
         theme={theme}
@@ -236,47 +300,44 @@ function SparkWeaveApp() {
   );
 }
 
-function TopBar({ theme, onOpenSettings }: { theme: SparkTheme; onOpenSettings: () => void }) {
+function CenteredBanner({ activeTab, theme }: { activeTab: AppTab; theme: SparkTheme }) {
   return (
-    <View style={styles.topBar}>
-      <View>
-        <Text selectable style={[styles.brand, { color: theme.colors.ink }]}>
-          SparkWeave
-        </Text>
-        <Text selectable style={[styles.subtitle, { color: theme.colors.muted }]}>
-          把零散想法，织成可执行的下一步
-        </Text>
-      </View>
-      <Pressable
-        accessibilityRole="button"
-        onPress={onOpenSettings}
-        style={[styles.iconButton, { borderColor: theme.colors.line, backgroundColor: theme.colors.surface }]}
-      >
-        <IconGlyph color={theme.colors.ink} name="settings" size={20} strokeWidth={1.7} />
-      </Pressable>
+    <View style={styles.centeredBanner}>
+      <Text selectable numberOfLines={1} style={[styles.bannerBrand, { color: theme.colors.ink }]}>
+        SparkWeave
+      </Text>
+      <Text selectable numberOfLines={1} style={[styles.bannerContext, { color: theme.colors.faint }]}>
+        {bannerCopy[activeTab]}
+      </Text>
     </View>
   );
 }
 
-function TodayScreen({
+function ProfileScreen({
   activeCaptures,
   clusters,
+  dailyAssistantEnabled,
   doneCount,
   inboxCount,
   onOpenCapture,
   onOpenCaptureDetail,
+  onOpenSettings,
   onOpenProject,
   projects,
+  compactPhone,
   theme,
 }: {
   activeCaptures: Capture[];
   clusters: ReturnType<typeof buildWeaveClusters>;
+  dailyAssistantEnabled: boolean;
   doneCount: number;
   inboxCount: number;
   onOpenCapture: () => void;
   onOpenCaptureDetail: (capture: Capture) => void;
+  onOpenSettings: () => void;
   onOpenProject: (project: Project) => void;
   projects: Project[];
+  compactPhone: boolean;
   theme: SparkTheme;
 }) {
   const focusCapture = activeCaptures[0];
@@ -291,17 +352,27 @@ function TodayScreen({
         end={{ x: 1, y: 1 }}
         style={[styles.heroPanel, panelStyle(theme)]}
       >
-        <View style={styles.kickerRow}>
-          <IconGlyph color={theme.colors.coral} name="sparkles" size={15} strokeWidth={1.8} />
-          <Text selectable style={[styles.kicker, { color: theme.colors.coral }]}>
-            今日工作台
-          </Text>
+        <View style={styles.profileHeroTopRow}>
+          <View style={styles.kickerRow}>
+            <IconGlyph color={theme.colors.coral} name="sparkles" size={15} strokeWidth={1.8} />
+            <Text selectable style={[styles.kicker, { color: theme.colors.coral }]}>
+              个人主页
+            </Text>
+          </View>
+          <Pressable
+            accessibilityLabel="打开创作偏好"
+            accessibilityRole="button"
+            onPress={onOpenSettings}
+            style={[styles.profileSettingsButton, { borderColor: theme.colors.line, backgroundColor: theme.colors.surface }]}
+          >
+            <IconGlyph color={theme.colors.ink} name="settings" size={20} strokeWidth={1.7} />
+          </Pressable>
         </View>
         <Text selectable style={[styles.heroTitle, { color: theme.colors.ink }]}>
-          先捕捉，再编织。
+          今天的创作痕迹。
         </Text>
         <Text selectable style={[styles.heroCopy, { color: theme.colors.muted }]}>
-          只保留今天真正需要行动的线索，其余交给收件箱慢慢沉淀。
+          像 commit 日志一样记录灵感、编织和产物，让创作过程也有可见的进度感。
         </Text>
         <Pressable
           accessibilityRole="button"
@@ -309,20 +380,44 @@ function TodayScreen({
           style={[styles.captureInput, { borderColor: theme.colors.line, backgroundColor: theme.colors.surface }]}
         >
           <IconGlyph color={theme.colors.muted} name="search" size={18} strokeWidth={1.8} />
-          <Text style={[styles.capturePlaceholder, { color: theme.colors.muted }]}>写下一个刚出现的想法...</Text>
+          <Text style={[styles.capturePlaceholder, { color: theme.colors.muted }]}>补充一条新的灵感记录...</Text>
           <View style={[styles.smallAction, { backgroundColor: theme.colors.ink }]}>
             <Text style={[styles.smallActionText, { color: theme.colors.background }]}>捕捉</Text>
           </View>
         </Pressable>
       </LinearGradient>
 
-      <View style={styles.metricGrid}>
-        <MetricCard label="待整理" value={String(inboxCount)} tone={theme.colors.cobalt} theme={theme} />
-        <MetricCard label="推进中" value={String(activeCaptures.length)} tone={theme.colors.sage} theme={theme} />
-        <MetricCard label="已完成" value={String(doneCount)} tone={theme.colors.coral} theme={theme} />
+      <View style={[styles.metricGrid, compactPhone ? styles.metricGridCompact : null]}>
+        <MetricCard compact={compactPhone} label="新灵感" value={String(inboxCount)} tone={theme.colors.cobalt} theme={theme} />
+        <MetricCard compact={compactPhone} label="编织中" value={String(activeCaptures.length)} tone={theme.colors.sage} theme={theme} />
+        <MetricCard compact={compactPhone} label="已产出" value={String(doneCount)} tone={theme.colors.coral} theme={theme} />
       </View>
 
-      <SectionHeader label="今日焦点" theme={theme} />
+      <SectionHeader label="今日建议" theme={theme} />
+      {dailyAssistantEnabled ? (
+        <View style={[styles.card, styles.glassPanel, panelStyle(theme)]}>
+          <Text selectable style={[styles.cardTitle, { color: theme.colors.ink }]}>
+            {leadCluster ? leadCluster.title : '先从一个素材开始'}
+          </Text>
+          <Text selectable style={[styles.bodyText, { color: theme.colors.muted }]}>
+            {leadCluster
+              ? leadCluster.suggestedAction
+              : '今天可以先捕捉 3 条最近反复出现的想法，系统会帮你找到第一组可编织的主题。'}
+          </Text>
+          {leadCluster ? <InfoBlock label="为什么推荐" value={leadCluster.sharedProblem} theme={theme} /> : null}
+        </View>
+      ) : (
+        <View style={[styles.card, panelStyle(theme)]}>
+          <Text selectable style={[styles.cardTitle, { color: theme.colors.ink }]}>
+            按需使用模式
+          </Text>
+          <Text selectable style={[styles.bodyText, { color: theme.colors.muted }]}>
+            Daily Assistant 已关闭。SparkWeave 会保持安静，只在你主动打开和发起创作目标时提供建议。
+          </Text>
+        </View>
+      )}
+
+      <SectionHeader label="过程记录" theme={theme} />
       {focusCapture ? (
         <Pressable onPress={() => onOpenCaptureDetail(focusCapture)} style={[styles.card, panelStyle(theme)]}>
           <View style={styles.rowBetween}>
@@ -337,10 +432,10 @@ function TodayScreen({
           <TagRow tags={focusCapture.tags} theme={theme} />
         </Pressable>
       ) : (
-        <EmptyState title="今天还没有焦点" copy="从捕捉一个想法开始。" theme={theme} />
+        <EmptyState title="今天还没有记录" copy="从捕捉一个想法开始。" theme={theme} />
       )}
 
-      <SectionHeader label="编织洞察" theme={theme} />
+      <SectionHeader label="最近编织" theme={theme} />
       {leadCluster ? (
         <View style={[styles.card, panelStyle(theme)]}>
           <WeaveConstellation compact clusters={clusters.slice(0, 4)} theme={theme} />
@@ -354,7 +449,7 @@ function TodayScreen({
         </View>
       ) : null}
 
-      <SectionHeader label="项目推进" theme={theme} />
+      <SectionHeader label="产物进度" theme={theme} />
       {leadProject ? (
         <Pressable onPress={() => onOpenProject(leadProject)} style={[styles.card, panelStyle(theme)]}>
           <Text selectable style={[styles.cardTitle, { color: theme.colors.ink }]}>
@@ -387,9 +482,30 @@ function InboxScreen({
   onUpdateCapture: (id: string, patch: Partial<Capture>) => void;
   theme: SparkTheme;
 }) {
+  const { width } = useWindowDimensions();
+  const [activeFilter, setActiveFilter] = useState<InboxFilterId>('all');
+  const [viewMode, setViewMode] = useState<InboxViewMode>('list');
+  const [carouselIndex, setCarouselIndex] = useState(0);
+  const carouselCardWidth = Math.max(280, width - 60);
+  const visibleCaptures = useMemo(() => {
+    return captures.filter((capture) => {
+      if (activeFilter === 'all') return true;
+      if (activeFilter === 'project') return Boolean(capture.projectId);
+      return capture.status === activeFilter;
+    });
+  }, [activeFilter, captures]);
+
+  useEffect(() => {
+    setCarouselIndex(0);
+  }, [activeFilter, query, viewMode, visibleCaptures.length]);
+
+  function updateCarouselIndex(offsetX: number) {
+    const nextIndex = Math.round(offsetX / (carouselCardWidth + 12));
+    setCarouselIndex(Math.min(Math.max(nextIndex, 0), Math.max(visibleCaptures.length - 1, 0)));
+  }
+
   return (
     <View style={styles.screenStack}>
-      <ScreenTitle title="收件箱" copy="先收进来，再判断它属于哪里。" theme={theme} />
       <TextInput
         onChangeText={onChangeQuery}
         placeholder="搜索标签、项目或内容"
@@ -397,60 +513,172 @@ function InboxScreen({
         style={[styles.searchInput, { color: theme.colors.ink, borderColor: theme.colors.line, backgroundColor: theme.colors.surface }]}
         value={query}
       />
-      <View style={styles.filterRow}>
-        {['全部', '待整理', '项目', '已归档'].map((item) => (
-          <Text key={item} style={[styles.filterChip, { color: theme.colors.muted, borderColor: theme.colors.line }]}>
-            {item}
-          </Text>
-        ))}
+      <View style={styles.inboxToolbox}>
+        <View style={styles.filterRow}>
+          {inboxFilters.map((item) => {
+            const active = activeFilter === item.id;
+            return (
+              <Pressable
+                accessibilityRole="button"
+                key={item.id}
+                onPress={() => setActiveFilter(item.id)}
+                style={[
+                  styles.filterChip,
+                  {
+                    borderColor: active ? `${theme.colors.ink}22` : theme.colors.line,
+                    backgroundColor: active ? `${theme.colors.ink}0d` : theme.colors.surface,
+                  },
+                ]}
+              >
+                <Text style={[styles.filterChipText, { color: active ? theme.colors.ink : theme.colors.muted }]}>{item.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <View style={[styles.viewToggle, { borderColor: theme.colors.line, backgroundColor: theme.colors.surface }]}>
+          {[
+            { id: 'list' as const, label: '列表' },
+            { id: 'carousel' as const, label: '滑卡' },
+          ].map((item) => {
+            const active = viewMode === item.id;
+            return (
+              <Pressable
+                accessibilityRole="button"
+                key={item.id}
+                onPress={() => setViewMode(item.id)}
+                style={[styles.viewToggleItem, { backgroundColor: active ? theme.colors.ink : 'transparent' }]}
+              >
+                <Text style={[styles.viewToggleText, { color: active ? theme.colors.background : theme.colors.muted }]}>{item.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
-      {captures.map((capture) => {
-        const project = projects.find((item) => item.id === capture.projectId);
-        return (
-          <Pressable key={capture.id} onPress={() => onOpenCapture(capture)} style={[styles.card, panelStyle(theme)]}>
-            <View style={styles.rowBetween}>
-              <Text selectable style={[styles.cardTitle, { color: theme.colors.ink, flex: 1 }]}>
-                {capture.title}
-              </Text>
-              <Text style={[styles.statusText, { color: theme.colors.coral }]}>{statusLabel(capture.status)}</Text>
+      {visibleCaptures.length ? (
+        viewMode === 'carousel' ? (
+          <View style={styles.carouselBlock}>
+            <ScrollView
+              decelerationRate="fast"
+              horizontal
+              onMomentumScrollEnd={(event) => updateCarouselIndex(event.nativeEvent.contentOffset.x)}
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={carouselCardWidth + 12}
+              snapToAlignment="start"
+              contentContainerStyle={styles.carouselTrack}
+            >
+              {visibleCaptures.map((capture) => {
+                const project = projects.find((item) => item.id === capture.projectId);
+                return (
+                  <View key={capture.id} style={{ width: carouselCardWidth }}>
+                    <CaptureCard
+                      capture={capture}
+                      project={project}
+                      onOpenCapture={onOpenCapture}
+                      onUpdateCapture={onUpdateCapture}
+                      theme={theme}
+                    />
+                  </View>
+                );
+              })}
+            </ScrollView>
+            <View style={styles.carouselDots}>
+              {visibleCaptures.map((capture, index) => (
+                <View
+                  key={capture.id}
+                  style={[
+                    styles.carouselDot,
+                    {
+                      backgroundColor: index === carouselIndex ? theme.colors.ink : theme.colors.line,
+                      width: index === carouselIndex ? 16 : 6,
+                    },
+                  ]}
+                />
+              ))}
             </View>
-            <Text selectable numberOfLines={2} style={[styles.bodyText, { color: theme.colors.muted }]}>
-              {capture.body}
-            </Text>
-            {project ? (
-              <Text selectable style={[styles.caption, { color: theme.colors.cobalt }]}>
-                归属：{project.name}
-              </Text>
-            ) : null}
-            <TagRow tags={capture.tags} theme={theme} />
-            <View style={styles.actionRow}>
-              <MiniButton label="推进" onPress={() => onUpdateCapture(capture.id, { status: 'active' })} theme={theme} />
-              <MiniButton label="完成" onPress={() => onUpdateCapture(capture.id, { status: 'done' })} theme={theme} />
-              <MiniButton label="归档" onPress={() => onUpdateCapture(capture.id, { status: 'archived' })} theme={theme} />
-            </View>
-          </Pressable>
-        );
-      })}
+          </View>
+        ) : (
+          visibleCaptures.map((capture) => {
+            const project = projects.find((item) => item.id === capture.projectId);
+            return (
+              <CaptureCard
+                capture={capture}
+                key={capture.id}
+                project={project}
+                onOpenCapture={onOpenCapture}
+                onUpdateCapture={onUpdateCapture}
+                theme={theme}
+              />
+            );
+          })
+        )
+      ) : (
+        <EmptyState title="没有匹配素材" copy="换一个筛选条件，或者先捕捉一条新的灵感。" theme={theme} />
+      )}
     </View>
+  );
+}
+
+function CaptureCard({
+  capture,
+  project,
+  onOpenCapture,
+  onUpdateCapture,
+  theme,
+}: {
+  capture: Capture;
+  project?: Project;
+  onOpenCapture: (capture: Capture) => void;
+  onUpdateCapture: (id: string, patch: Partial<Capture>) => void;
+  theme: SparkTheme;
+}) {
+  return (
+    <Pressable key={capture.id} onPress={() => onOpenCapture(capture)} style={[styles.captureCard, panelStyle(theme)]}>
+      <View style={styles.rowBetween}>
+        <Text selectable numberOfLines={1} style={[styles.captureTitle, { color: theme.colors.ink, flex: 1 }]}>
+          {capture.title}
+        </Text>
+        <Text style={[styles.captureStatus, { color: theme.colors.coral, backgroundColor: `${theme.colors.coral}12` }]}>
+          {statusLabel(capture.status)}
+        </Text>
+      </View>
+      <Text selectable numberOfLines={2} style={[styles.captureBody, { color: theme.colors.muted }]}>
+        {capture.body}
+      </Text>
+      <View style={styles.captureMetaRow}>
+        {project ? (
+          <Text selectable numberOfLines={1} style={[styles.caption, styles.captureProject, { color: theme.colors.cobalt }]}>
+            归属：{project.name}
+          </Text>
+        ) : null}
+        <TagRow tags={capture.tags.slice(0, 2)} theme={theme} />
+      </View>
+      <View style={styles.captureActions}>
+        <MiniButton label="推进" onPress={() => onUpdateCapture(capture.id, { status: 'active' })} theme={theme} />
+        <MiniButton label="完成" onPress={() => onUpdateCapture(capture.id, { status: 'done' })} theme={theme} />
+        <MiniButton label="归档" onPress={() => onUpdateCapture(capture.id, { status: 'archived' })} theme={theme} />
+      </View>
+    </Pressable>
   );
 }
 
 function WeaveScreen({
   captures,
   clusters,
+  compactPhone,
   onOpenCapture,
   theme,
 }: {
   captures: Capture[];
   clusters: ReturnType<typeof buildWeaveClusters>;
+  compactPhone: boolean;
   onOpenCapture: (capture: Capture) => void;
   theme: SparkTheme;
 }) {
   return (
     <View style={styles.screenStack}>
-      <ScreenTitle title="编织" copy="本地规则会解释为什么这些想法应该靠近。" theme={theme} />
-      <View style={[styles.mapPanel, panelStyle(theme)]}>
-        <WeaveConstellation clusters={clusters.slice(0, 5)} theme={theme} />
+      <View style={[styles.mapPanel, compactPhone ? styles.mapPanelCompact : null, panelStyle(theme)]}>
+        <WeaveConstellation compact={compactPhone} clusters={clusters.slice(0, 5)} theme={theme} />
       </View>
 
       {clusters.map((cluster) => (
@@ -466,6 +694,9 @@ function WeaveScreen({
           <Text selectable style={[styles.bodyText, { color: theme.colors.muted }]}>
             {cluster.reason}
           </Text>
+          <InfoBlock label="为什么连接" value={cluster.connectionReason} theme={theme} />
+          <InfoBlock label="共同指向" value={cluster.sharedProblem} theme={theme} />
+          <InfoBlock label="建议动作" value={cluster.suggestedAction} theme={theme} />
           <TagRow tags={cluster.tags} theme={theme} />
           {cluster.captureIds.slice(0, 3).map((id) => {
             const capture = captures.find((item) => item.id === id);
@@ -487,7 +718,7 @@ function WeaveScreen({
   );
 }
 
-function ProjectsScreen({
+function OutputsScreen({
   captures,
   onFocusProject,
   onOpenProject,
@@ -502,7 +733,6 @@ function ProjectsScreen({
 }) {
   return (
     <View style={styles.screenStack}>
-      <ScreenTitle title="项目" copy="把关系洞察收束成可以推进的行动。" theme={theme} />
       {projects.map((project) => {
         const linked = captures.filter((capture) => capture.projectId === project.id);
         return (
@@ -523,7 +753,7 @@ function ProjectsScreen({
               已连接 {linked.length} 条灵感
             </Text>
             <View style={styles.actionRow}>
-              <MiniButton label="查看详情" onPress={() => onOpenProject(project)} theme={theme} />
+              <MiniButton label="查看产物" onPress={() => onOpenProject(project)} theme={theme} />
               <MiniButton label="进入专注" onPress={() => onFocusProject(project)} theme={theme} />
             </View>
           </Pressable>
@@ -551,7 +781,7 @@ function BottomBar({
       style={[
         styles.bottomBar,
         {
-          backgroundColor: theme.colors.surface,
+          backgroundColor: theme.isDark ? 'rgba(31, 29, 26, 0.86)' : 'rgba(255, 253, 248, 0.86)',
           borderColor: theme.colors.line,
           bottom: bottomInset + 14,
         },
@@ -560,9 +790,7 @@ function BottomBar({
       {tabItems.slice(0, 2).map((item) => (
         <TabButton key={item.id} active={activeTab === item.id} item={item} onPress={() => onChangeTab(item.id)} theme={theme} />
       ))}
-      <Pressable accessibilityRole="button" onPress={onOpenCapture} style={[styles.fab, { backgroundColor: theme.colors.ink }]}>
-        <IconGlyph color={theme.colors.background} name="plus" size={30} strokeWidth={2.4} />
-      </Pressable>
+      <CaptureFab onPress={onOpenCapture} theme={theme} />
       {tabItems.slice(2).map((item) => (
         <TabButton key={item.id} active={activeTab === item.id} item={item} onPress={() => onChangeTab(item.id)} theme={theme} />
       ))}
@@ -581,10 +809,112 @@ function TabButton({
   onPress: () => void;
   theme: SparkTheme;
 }) {
+  const activeProgress = useRef(new Animated.Value(active ? 1 : 0)).current;
+  const pressProgress = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.spring(activeProgress, {
+      damping: 16,
+      mass: 0.72,
+      stiffness: 190,
+      toValue: active ? 1 : 0,
+      useNativeDriver: true,
+    }).start();
+  }, [active, activeProgress]);
+
+  function pressTo(value: number) {
+    Animated.spring(pressProgress, {
+      damping: 17,
+      mass: 0.56,
+      stiffness: 340,
+      toValue: value,
+      useNativeDriver: true,
+    }).start();
+  }
+
+  const activeScale = activeProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.78, 1],
+  });
+  const activeOpacity = activeProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+  });
+  const contentScale = Animated.multiply(
+    pressProgress,
+    activeProgress.interpolate({
+      inputRange: [0, 1],
+      outputRange: [1, 1.04],
+    }),
+  );
+  const activeBackground = theme.isDark ? 'rgba(244, 239, 229, 0.12)' : 'rgba(23, 21, 18, 0.07)';
+  const activeBorder = theme.isDark ? 'rgba(244, 239, 229, 0.16)' : 'rgba(23, 21, 18, 0.09)';
+
   return (
-    <Pressable accessibilityRole="tab" onPress={onPress} style={styles.tabButton}>
-      <IconGlyph color={active ? theme.colors.ink : theme.colors.muted} name={item.icon} size={22} strokeWidth={active ? 2 : 1.7} />
-      <Text style={[styles.tabLabel, { color: active ? theme.colors.ink : theme.colors.muted }]}>{item.label}</Text>
+    <Pressable
+      accessibilityRole="tab"
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      onPressIn={() => pressTo(0.92)}
+      onPressOut={() => pressTo(1)}
+      style={styles.tabButton}
+    >
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.tabActiveBlob,
+          {
+            backgroundColor: activeBackground,
+            borderColor: activeBorder,
+            opacity: activeOpacity,
+            transform: [{ scaleX: activeScale }, { scaleY: activeProgress }],
+          },
+        ]}
+      />
+      <Animated.View style={[styles.tabContent, { transform: [{ scale: contentScale }] }]}>
+        <View style={styles.tabIconWrap}>
+          <IconGlyph color={active ? theme.colors.ink : theme.colors.muted} name={item.icon} size={22} strokeWidth={active ? 2.15 : 1.7} />
+        </View>
+        <Text style={[styles.tabLabel, active ? styles.tabLabelActive : null, { color: active ? theme.colors.ink : theme.colors.muted }]}>
+          {item.label}
+        </Text>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+function CaptureFab({ onPress, theme }: { onPress: () => void; theme: SparkTheme }) {
+  const pressProgress = useRef(new Animated.Value(1)).current;
+
+  function pressTo(value: number) {
+    Animated.spring(pressProgress, {
+      damping: 16,
+      mass: 0.58,
+      stiffness: 360,
+      toValue: value,
+      useNativeDriver: true,
+    }).start();
+  }
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      onPressIn={() => pressTo(0.9)}
+      onPressOut={() => pressTo(1)}
+      style={styles.fabSlot}
+    >
+      <Animated.View
+        style={[
+          styles.fab,
+          {
+            backgroundColor: theme.colors.ink,
+            transform: [{ scale: pressProgress }],
+          },
+        ]}
+      >
+        <IconGlyph color={theme.colors.background} name="plus" size={30} strokeWidth={2.4} />
+      </Animated.View>
     </Pressable>
   );
 }
@@ -624,7 +954,7 @@ function CaptureSheet({
       <TextInput
         multiline
         onChangeText={setBody}
-        placeholder="例如：这个功能应该放在项目详情，而不是塞进首页..."
+        placeholder="例如：这个功能应该放在项目详情，首页只保留入口..."
         placeholderTextColor={theme.colors.muted}
         style={[styles.textArea, { color: theme.colors.ink, borderColor: theme.colors.line, backgroundColor: theme.colors.surfaceSoft }]}
         textAlignVertical="top"
@@ -720,12 +1050,16 @@ function CaptureDetailSheet({
 
 function ProjectDetailSheet({
   captures,
+  feedback,
+  onAddFeedback,
   project,
   theme,
   onClose,
   onFocusProject,
 }: {
   captures: Capture[];
+  feedback: FeedbackEntry[];
+  onAddFeedback: (feedback: Omit<FeedbackEntry, 'id' | 'createdAt'>) => void;
   project: Project | null;
   theme: SparkTheme;
   onClose: () => void;
@@ -736,6 +1070,7 @@ function ProjectDetailSheet({
   }
 
   const linked = captures.filter((capture) => capture.projectId === project.id);
+  const feedbackCount = feedback.filter((item) => item.targetType === 'output' && item.targetId === project.id).length;
 
   return (
     <BaseSheet visible={Boolean(project)} onClose={onClose} theme={theme}>
@@ -756,8 +1091,91 @@ function ProjectDetailSheet({
           <Text style={{ color: theme.colors.muted }}>{statusLabel(capture.status)}</Text>
         </View>
       ))}
+      <SectionHeader label="Agent 反馈" theme={theme} />
+      <FeedbackPanel
+        feedbackCount={feedbackCount}
+        onAddFeedback={onAddFeedback}
+        targetId={project.id}
+        targetType="output"
+        theme={theme}
+      />
       <PrimaryButton label="进入专注" onPress={() => onFocusProject(project)} theme={theme} />
     </BaseSheet>
+  );
+}
+
+function FeedbackPanel({
+  feedbackCount,
+  onAddFeedback,
+  targetId,
+  targetType,
+  theme,
+}: {
+  feedbackCount: number;
+  onAddFeedback: (feedback: Omit<FeedbackEntry, 'id' | 'createdAt'>) => void;
+  targetId: string;
+  targetType: FeedbackEntry['targetType'];
+  theme: SparkTheme;
+}) {
+  const [score, setScore] = useState(0);
+  const [text, setText] = useState('');
+
+  function submit() {
+    if (!score) {
+      return;
+    }
+
+    onAddFeedback({
+      targetId,
+      targetType,
+      score,
+      text: text.trim(),
+    });
+    setScore(0);
+    setText('');
+  }
+
+  return (
+    <View style={[styles.feedbackPanel, { borderColor: theme.colors.line, backgroundColor: theme.colors.surfaceSoft }]}>
+      <Text selectable style={[styles.bodyText, { color: theme.colors.muted }]}>
+        这个产物是否符合你的想法？反馈会用于后续提示词、模板和检索排序。
+      </Text>
+      <View style={styles.scoreRow}>
+        {[1, 2, 3, 4, 5].map((item) => {
+          const active = score === item;
+          return (
+            <Pressable
+              accessibilityRole="button"
+              key={item}
+              onPress={() => setScore(item)}
+              style={[
+                styles.scoreButton,
+                {
+                  borderColor: active ? theme.colors.coral : theme.colors.line,
+                  backgroundColor: active ? `${theme.colors.coral}18` : theme.colors.surface,
+                },
+              ]}
+            >
+              <Text style={{ color: active ? theme.colors.coral : theme.colors.ink, fontFamily: fonts.bodyMedium }}>{item}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <TextInput
+        multiline
+        onChangeText={setText}
+        placeholder="可选：哪里有用，哪里不符合你的想法？"
+        placeholderTextColor={theme.colors.muted}
+        style={[styles.feedbackInput, { color: theme.colors.ink, borderColor: theme.colors.line, backgroundColor: theme.colors.surface }]}
+        value={text}
+      />
+      <View style={styles.rowBetween}>
+        <Text selectable style={[styles.caption, { color: theme.colors.muted }]}>
+          已记录 {feedbackCount} 次反馈
+        </Text>
+        <MiniButton disabled={!score} label={score ? '提交反馈' : '先选评分'} onPress={submit} theme={theme} />
+      </View>
+    </View>
   );
 }
 
@@ -803,24 +1221,45 @@ function SettingsSheet({
   state,
   theme,
   onClose,
+  onSetDailyAssistantEnabled,
   onSetTheme,
 }: {
   visible: boolean;
   state: SparkWeaveState;
   theme: SparkTheme;
   onClose: () => void;
+  onSetDailyAssistantEnabled: (enabled: boolean) => void;
   onSetTheme: (mode: ThemeMode) => void;
 }) {
   return (
     <BaseSheet visible={visible} onClose={onClose} theme={theme}>
       <Text selectable style={[styles.sheetTitle, { color: theme.colors.ink }]}>
-        设置
+        创作偏好
       </Text>
-      <SettingsRow label="本地存储" value="AsyncStorage · MVP" theme={theme} />
-      <SettingsRow label="长期路线" value="SQLite + 可选云同步" theme={theme} />
-      <SettingsRow label="API" value="后续接入模型编织" theme={theme} />
+      <SettingsGroupTitle label="每日建议" theme={theme} />
       <View style={[styles.settingsRow, { borderColor: theme.colors.line }]}>
-        <View>
+        <View style={styles.settingsCopy}>
+          <Text style={[styles.fieldLabel, { color: theme.colors.ink }]}>Daily Assistant</Text>
+          <Text selectable style={[styles.caption, { color: theme.colors.muted }]}>每天给一个可推进的建议；关闭后保持按需使用。</Text>
+        </View>
+        <Switch
+          onValueChange={onSetDailyAssistantEnabled}
+          value={state.settings.dailyAssistantEnabled}
+        />
+      </View>
+
+      <SettingsGroupTitle label="导入与连接" theme={theme} />
+      <SettingsRow label="Obsidian" value="优先 connector · 待接入" theme={theme} />
+      <SettingsRow label="Notion / 语雀" value="路线占位 · 后续连接" theme={theme} />
+
+      <SettingsGroupTitle label="数据与导出" theme={theme} />
+      <SettingsRow label="本地存储" value="AsyncStorage · MVP" theme={theme} />
+      <SettingsRow label="迁移路线" value="Markdown / JSON 导出" theme={theme} />
+      <SettingsRow label="Agent API" value="后续接入模型编织" theme={theme} />
+
+      <SettingsGroupTitle label="外观" theme={theme} />
+      <View style={[styles.settingsRow, { borderColor: theme.colors.line }]}>
+        <View style={styles.settingsCopy}>
           <Text style={[styles.fieldLabel, { color: theme.colors.ink }]}>深色模式</Text>
           <Text style={[styles.caption, { color: theme.colors.muted }]}>石墨色作为 Focus / Weave 的沉浸气质</Text>
         </View>
@@ -837,6 +1276,14 @@ function SettingsSheet({
   );
 }
 
+function SettingsGroupTitle({ label, theme }: { label: string; theme: SparkTheme }) {
+  return (
+    <Text selectable style={[styles.settingsGroupTitle, { color: theme.colors.coral }]}>
+      {label}
+    </Text>
+  );
+}
+
 function BaseSheet({
   children,
   immersive,
@@ -850,6 +1297,8 @@ function BaseSheet({
   theme: SparkTheme;
   onClose: () => void;
 }) {
+  const insets = useSafeAreaInsets();
+
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
       <KeyboardAvoidingView behavior="padding" style={styles.modalOverlay}>
@@ -860,27 +1309,21 @@ function BaseSheet({
             {
               backgroundColor: immersive ? (theme.isDark ? '#191817' : '#f3efe7') : theme.colors.surface,
               borderColor: theme.colors.line,
+              paddingBottom: Math.max(insets.bottom, 14),
             },
           ]}
         >
           <View style={[styles.sheetHandle, { backgroundColor: theme.colors.line }]} />
-          {children}
+          <ScrollView
+            contentContainerStyle={styles.sheetContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {children}
+          </ScrollView>
         </View>
       </KeyboardAvoidingView>
     </Modal>
-  );
-}
-
-function ScreenTitle({ title, copy, theme }: { title: string; copy: string; theme: SparkTheme }) {
-  return (
-    <View>
-      <Text selectable style={[styles.screenTitle, { color: theme.colors.ink }]}>
-        {title}
-      </Text>
-      <Text selectable style={[styles.subtitle, { color: theme.colors.muted }]}>
-        {copy}
-      </Text>
-    </View>
   );
 }
 
@@ -895,10 +1338,22 @@ function SectionHeader({ label, theme }: { label: string; theme: SparkTheme }) {
   );
 }
 
-function MetricCard({ label, value, tone, theme }: { label: string; value: string; tone: string; theme: SparkTheme }) {
-  const iconName: SparkIconName = label === '待整理' ? 'inbox' : label === '推进中' ? 'timer' : 'check';
+function MetricCard({
+  compact,
+  label,
+  value,
+  tone,
+  theme,
+}: {
+  compact?: boolean;
+  label: string;
+  value: string;
+  tone: string;
+  theme: SparkTheme;
+}) {
+  const iconName: SparkIconName = label === '待整理' || label === '新灵感' ? 'inbox' : label === '推进中' || label === '编织中' ? 'timer' : 'check';
   return (
-    <View style={[styles.metricCard, panelStyle(theme)]}>
+    <View style={[styles.metricCard, compact ? styles.metricCardCompact : null, panelStyle(theme)]}>
       <View style={[styles.metricIcon, { borderColor: `${tone}55`, backgroundColor: `${tone}12` }]}>
         <IconGlyph color={tone} name={iconName} size={16} strokeWidth={1.9} />
       </View>
@@ -969,12 +1424,30 @@ function SettingsRow({ label, value, theme }: { label: string; value: string; th
   );
 }
 
-function MiniButton({ label, onPress, theme }: { label: string; onPress: () => void; theme: SparkTheme }) {
+function MiniButton({
+  disabled,
+  label,
+  onPress,
+  theme,
+}: {
+  disabled?: boolean;
+  label: string;
+  onPress: () => void;
+  theme: SparkTheme;
+}) {
   return (
     <Pressable
       accessibilityRole="button"
+      disabled={disabled}
       onPress={onPress}
-      style={[styles.miniButton, { borderColor: theme.colors.line, backgroundColor: theme.colors.surfaceSoft }]}
+      style={[
+        styles.miniButton,
+        {
+          borderColor: theme.colors.line,
+          backgroundColor: theme.colors.surfaceSoft,
+          opacity: disabled ? 0.52 : 1,
+        },
+      ]}
     >
       <Text style={{ color: theme.colors.ink, fontFamily: fonts.body, fontSize: 13 }}>{label}</Text>
     </Pressable>
@@ -991,9 +1464,9 @@ function PrimaryButton({ label, onPress, theme }: { label: string; onPress: () =
 
 function panelStyle(theme: SparkTheme): StyleProp<ViewStyle> {
   return {
-    backgroundColor: theme.colors.surface,
+    backgroundColor: theme.isDark ? 'rgba(31, 29, 26, 0.92)' : 'rgba(255, 253, 248, 0.94)',
     borderColor: theme.colors.line,
-    boxShadow: `0 18px 46px ${theme.colors.shadow}`,
+    boxShadow: `0 10px 28px ${theme.colors.shadow}`,
   };
 }
 
@@ -1009,34 +1482,30 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    gap: 18,
+    gap: 14,
     paddingHorizontal: 18,
     paddingTop: 64,
   },
-  topBar: {
+  centeredBanner: {
     alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  brand: {
-    fontFamily: fonts.latinDisplay,
-    fontSize: 31,
-    letterSpacing: 0,
-    lineHeight: 39,
-  },
-  subtitle: {
-    fontFamily: fonts.body,
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  iconButton: {
-    alignItems: 'center',
-    borderCurve: 'continuous',
-    borderRadius: 8,
-    borderWidth: 1,
-    height: 42,
+    gap: 0,
     justifyContent: 'center',
-    width: 42,
+    minHeight: 38,
+    paddingHorizontal: 28,
+  },
+  bannerBrand: {
+    fontFamily: fonts.latinDisplay,
+    fontSize: 19,
+    letterSpacing: 0,
+    lineHeight: 23,
+  },
+  bannerContext: {
+    fontFamily: fonts.body,
+    fontSize: 10,
+    lineHeight: 14,
+    maxWidth: 260,
+    opacity: 0.82,
+    textAlign: 'center',
   },
   screenStack: {
     gap: 16,
@@ -1053,6 +1522,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 6,
+  },
+  profileHeroTopRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  profileSettingsButton: {
+    alignItems: 'center',
+    borderCurve: 'continuous',
+    borderRadius: 22,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
   },
   kicker: {
     fontFamily: fonts.body,
@@ -1098,7 +1581,11 @@ const styles = StyleSheet.create({
   },
   metricGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
+  },
+  metricGridCompact: {
+    gap: 8,
   },
   metricCard: {
     alignItems: 'flex-start',
@@ -1109,6 +1596,12 @@ const styles = StyleSheet.create({
     gap: 9,
     minHeight: 84,
     padding: 12,
+  },
+  metricCardCompact: {
+    flexBasis: '31%',
+    minHeight: 78,
+    minWidth: 0,
+    padding: 10,
   },
   metricIcon: {
     alignItems: 'center',
@@ -1143,6 +1636,64 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: 10,
     padding: 16,
+  },
+  captureCard: {
+    borderCurve: 'continuous',
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 8,
+    padding: 14,
+  },
+  captureTitle: {
+    fontFamily: fonts.displayBold,
+    fontSize: 19,
+    lineHeight: 25,
+  },
+  captureBody: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  captureStatus: {
+    borderRadius: 999,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+    lineHeight: 16,
+    overflow: 'hidden',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  captureMetaRow: {
+    gap: 8,
+  },
+  captureProject: {
+    flexShrink: 1,
+  },
+  captureActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingTop: 2,
+  },
+  carouselBlock: {
+    gap: 10,
+  },
+  carouselTrack: {
+    gap: 12,
+    paddingRight: 6,
+  },
+  carouselDots: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 5,
+    justifyContent: 'center',
+  },
+  carouselDot: {
+    borderRadius: 999,
+    height: 6,
+  },
+  glassPanel: {
+    backgroundColor: 'rgba(255, 255, 255, 0.44)',
   },
   cardTitle: {
     fontFamily: fonts.displayBold,
@@ -1211,14 +1762,42 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
   },
+  inboxToolbox: {
+    gap: 10,
+  },
   filterChip: {
+    alignItems: 'center',
     borderRadius: 999,
     borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 30,
+    overflow: 'hidden',
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+  },
+  filterChipText: {
     fontFamily: fonts.body,
     fontSize: 12,
-    overflow: 'hidden',
-    paddingHorizontal: 10,
+    lineHeight: 16,
+  },
+  viewToggle: {
+    alignSelf: 'flex-start',
+    borderCurve: 'continuous',
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 2,
+    padding: 3,
+  },
+  viewToggleItem: {
+    borderRadius: 999,
+    paddingHorizontal: 13,
     paddingVertical: 6,
+  },
+  viewToggleText: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+    lineHeight: 16,
   },
   statusText: {
     fontFamily: fonts.body,
@@ -1234,8 +1813,8 @@ const styles = StyleSheet.create({
     borderCurve: 'continuous',
     borderRadius: 8,
     borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
   },
   primaryButton: {
     alignItems: 'center',
@@ -1253,9 +1832,13 @@ const styles = StyleSheet.create({
     borderCurve: 'continuous',
     borderRadius: 8,
     borderWidth: 1,
-    height: 292,
+    height: 284,
     overflow: 'hidden',
     padding: 12,
+  },
+  mapPanelCompact: {
+    height: 128,
+    padding: 8,
   },
   mapLine: {
     height: 1,
@@ -1308,21 +1891,58 @@ const styles = StyleSheet.create({
     padding: 8,
     position: 'absolute',
     right: 18,
+    boxShadow: '0 14px 36px rgba(49, 42, 31, 0.12)',
+  },
+  bottomBarBackdrop: {
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
   },
   tabButton: {
     alignItems: 'center',
     flex: 1,
+    borderRadius: 18,
     gap: 2,
+    justifyContent: 'center',
+    minHeight: 48,
+    overflow: 'hidden',
     paddingVertical: 7,
+    position: 'relative',
   },
-  tabSymbol: {
-    fontFamily: fonts.displayBold,
-    fontSize: 18,
-    lineHeight: 21,
+  tabActiveBlob: {
+    borderRadius: 18,
+    borderWidth: 1,
+    bottom: 2,
+    left: 3,
+    position: 'absolute',
+    right: 3,
+    top: 2,
+    zIndex: 0,
+  },
+  tabContent: {
+    alignItems: 'center',
+    gap: 2,
+    justifyContent: 'center',
+    position: 'relative',
+    zIndex: 2,
+  },
+  tabIconWrap: {
+    height: 22,
+    justifyContent: 'center',
   },
   tabLabel: {
     fontFamily: fonts.body,
     fontSize: 11,
+  },
+  tabLabelActive: {
+    fontFamily: fonts.bodyMedium,
+  },
+  fabSlot: {
+    alignItems: 'center',
+    height: 54,
+    justifyContent: 'center',
+    width: 58,
   },
   fab: {
     alignItems: 'center',
@@ -1351,7 +1971,11 @@ const styles = StyleSheet.create({
     gap: 14,
     maxHeight: '88%',
     padding: 18,
-    paddingBottom: 34,
+    boxShadow: '0 -18px 40px rgba(20, 17, 14, 0.16)',
+  },
+  sheetContent: {
+    gap: 14,
+    paddingBottom: 20,
   },
   sheetHandle: {
     alignSelf: 'center',
@@ -1392,6 +2016,36 @@ const styles = StyleSheet.create({
     gap: 4,
     padding: 12,
   },
+  feedbackPanel: {
+    borderCurve: 'continuous',
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 10,
+    padding: 12,
+  },
+  feedbackInput: {
+    borderCurve: 'continuous',
+    borderRadius: 8,
+    borderWidth: 1,
+    fontFamily: fonts.body,
+    fontSize: 14,
+    minHeight: 72,
+    padding: 12,
+    textAlignVertical: 'top',
+  },
+  scoreRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  scoreButton: {
+    alignItems: 'center',
+    borderCurve: 'continuous',
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
   focusDial: {
     alignItems: 'center',
     alignSelf: 'center',
@@ -1413,6 +2067,17 @@ const styles = StyleSheet.create({
     gap: 12,
     justifyContent: 'space-between',
     paddingVertical: 12,
+  },
+  settingsCopy: {
+    flex: 1,
+    gap: 3,
+  },
+  settingsGroupTitle: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0,
+    marginTop: 4,
   },
   darkPreview: {
     borderCurve: 'continuous',
@@ -1438,11 +2103,6 @@ const styles = StyleSheet.create({
     height: 22,
     position: 'absolute',
     width: 22,
-  },
-  screenTitle: {
-    fontFamily: fonts.displayBold,
-    fontSize: 34,
-    lineHeight: 42,
   },
   constellation: {
     borderCurve: 'continuous',

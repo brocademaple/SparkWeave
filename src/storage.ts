@@ -17,6 +17,11 @@ export async function loadSparkWeaveState(): Promise<SparkWeaveState> {
       captures: parsed.captures?.length ? parsed.captures : defaultState.captures,
       projects: parsed.projects?.length ? parsed.projects : defaultState.projects,
       themeMode: parsed.themeMode ?? defaultState.themeMode,
+      settings: {
+        ...defaultState.settings,
+        ...parsed.settings,
+      },
+      feedback: parsed.feedback ?? defaultState.feedback,
     };
   } catch {
     return defaultState;

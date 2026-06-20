@@ -84,4 +84,8 @@ export const defaultState: SparkWeaveState = {
   captures: seedCaptures,
   projects: seedProjects,
   themeMode: 'light',
+  settings: {
+    dailyAssistantEnabled: true,
+  },
+  feedback: [],
 };
