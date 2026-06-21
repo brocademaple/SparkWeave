@@ -20,9 +20,23 @@ export type Project = {
   progress: number;
 };
 
+export type ThoughtStatus = 'draft' | 'active' | 'done';
+
+export type Thought = {
+  id: string;
+  projectId: string;
+  title: string;
+  brief: string;
+  model: '金字塔结构' | '决策分层' | '行动闭环';
+  tags: string[];
+  captureIds: string[];
+  status: ThoughtStatus;
+};
+
 export type WeaveCluster = {
   id: string;
   title: string;
+  model: string;
   reason: string;
   connectionReason: string;
   sharedProblem: string;
@@ -53,6 +67,7 @@ export type FeedbackEntry = {
 export type SparkWeaveState = {
   captures: Capture[];
   projects: Project[];
+  thoughts: Thought[];
   themeMode: ThemeMode;
   settings: AppSettings;
   feedback: FeedbackEntry[];

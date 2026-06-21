@@ -13,7 +13,8 @@ export type SparkIconName =
   | 'search'
   | 'timer'
   | 'check'
-  | 'plus';
+  | 'plus'
+  | 'expand';
 
 export function IconGlyph({
   color = '#171512',
@@ -93,6 +94,12 @@ export function IconGlyph({
         </>
       ) : null}
       {name === 'plus' ? <Path {...common} d="M12 5v14M5 12h14" /> : null}
+      {name === 'expand' ? (
+        <>
+          <Path {...common} d="M8 4.5H4.5V8M16 4.5h3.5V8M8 19.5H4.5V16M16 19.5h3.5V16" />
+          <Path {...common} d="M9 9 4.5 4.5M15 9l4.5-4.5M9 15l-4.5 4.5M15 15l4.5 4.5" />
+        </>
+      ) : null}
     </Svg>
   );
 }

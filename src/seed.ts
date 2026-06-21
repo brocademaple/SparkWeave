@@ -1,4 +1,4 @@
-import type { Capture, Project, SparkWeaveState } from './types';
+import type { Capture, Project, SparkWeaveState, Thought } from './types';
 
 export const seedProjects: Project[] = [
   {
@@ -80,9 +80,43 @@ export const seedCaptures: Capture[] = [
   },
 ];
 
+export const seedThoughts: Thought[] = [
+  {
+    id: 'thought-sparkweave-home',
+    projectId: 'project-sparkweave',
+    title: '首页应该只留下真正驱动行动的入口',
+    brief: '先把首页收成一个轻量命令中心，复杂判断进入下钻页。',
+    model: '金字塔结构',
+    tags: ['产品', '界面'],
+    captureIds: ['capture-1', 'capture-2'],
+    status: 'active',
+  },
+  {
+    id: 'thought-sparkweave-weave',
+    projectId: 'project-sparkweave',
+    title: '编织先解释关系，再决定是否接模型',
+    brief: '先让连接逻辑可解释，等交互验证后再引入 AI 生成。',
+    model: '决策分层',
+    tags: ['编织', 'AI', '规则'],
+    captureIds: ['capture-2', 'capture-4'],
+    status: 'draft',
+  },
+  {
+    id: 'thought-writing-angle',
+    projectId: 'project-writing',
+    title: '从碎片定位一条可写的文章主线',
+    brief: '用多条灵感拼出文章的核心判断，再落成结构和下一步。',
+    model: '行动闭环',
+    tags: ['写作', '定位'],
+    captureIds: ['capture-5'],
+    status: 'active',
+  },
+];
+
 export const defaultState: SparkWeaveState = {
   captures: seedCaptures,
   projects: seedProjects,
+  thoughts: seedThoughts,
   themeMode: 'light',
   settings: {
     dailyAssistantEnabled: true,

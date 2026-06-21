@@ -21,7 +21,7 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { defaultState } from './src/seed';
 import { loadSparkWeaveState, saveSparkWeaveState } from './src/storage';
 import { fonts, getTheme, SparkTheme } from './src/theme';
-import type { AppTab, Capture, FeedbackEntry, Project, SparkWeaveState, ThemeMode } from './src/types';
+import type { AppTab, Capture, FeedbackEntry, Project, SparkWeaveState, ThemeMode, Thought } from './src/types';
 import { IconGlyph, type SparkIconName, WeaveConstellation } from './src/visuals';
 import { buildWeaveClusters } from './src/weave';
 
@@ -30,14 +30,14 @@ const tagOptions = ['产品', '视觉', '编织', '存储', '写作', '复盘', 
 const tabItems: Array<{ id: AppTab; label: string; icon: SparkIconName }> = [
   { id: 'inbox', label: '收件箱', icon: 'inbox' },
   { id: 'weave', label: '编织', icon: 'network' },
-  { id: 'outputs', label: '产物', icon: 'folder' },
+  { id: 'outputs', label: '项目', icon: 'folder' },
   { id: 'profile', label: '主页', icon: 'circle' },
 ];
 
 const bannerCopy: Record<AppTab, string> = {
   inbox: '收件箱 · 先收进来',
   weave: '编织 · 解释关系',
-  outputs: '产物 · 沉淀结果',
+  outputs: '项目 · 项目 / 思维 / 灵感',
   profile: '主页 · 今日推进',
 };
 
@@ -68,6 +68,7 @@ function SparkWeaveApp() {
   const [activeTab, setActiveTab] = useState<AppTab>('inbox');
   const [captureOpen, setCaptureOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [weaveBoardOpen, setWeaveBoardOpen] = useState(false);
   const [focusProject, setFocusProject] = useState<Project | null>(null);
   const [selectedCapture, setSelectedCapture] = useState<Capture | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -204,6 +205,7 @@ function SparkWeaveApp() {
             clusters={clusters}
             onOpenCapture={setSelectedCapture}
             compactPhone={compactPhone}
+            onOpenBoard={() => setWeaveBoardOpen(true)}
             theme={theme}
           />
         ) : null}
@@ -214,6 +216,7 @@ function SparkWeaveApp() {
             onFocusProject={setFocusProject}
             onOpenProject={setSelectedProject}
             projects={sparkState.projects}
+            thoughts={sparkState.thoughts}
             theme={theme}
           />
         ) : null}
@@ -278,6 +281,7 @@ function SparkWeaveApp() {
         onClose={() => setSelectedProject(null)}
         onFocusProject={setFocusProject}
         project={selectedProject}
+        thoughts={sparkState.thoughts}
         theme={theme}
       />
 
@@ -285,7 +289,18 @@ function SparkWeaveApp() {
         captures={sparkState.captures}
         onClose={() => setFocusProject(null)}
         project={focusProject}
+        thoughts={sparkState.thoughts}
         theme={theme}
+      />
+
+      <WeaveBoardSheet
+        captures={sparkState.captures}
+        clusters={clusters}
+        onClose={() => setWeaveBoardOpen(false)}
+        projects={sparkState.projects}
+        theme={theme}
+        thoughts={sparkState.thoughts}
+        visible={weaveBoardOpen}
       />
 
       <SettingsSheet
@@ -486,7 +501,9 @@ function InboxScreen({
   const [activeFilter, setActiveFilter] = useState<InboxFilterId>('all');
   const [viewMode, setViewMode] = useState<InboxViewMode>('list');
   const [carouselIndex, setCarouselIndex] = useState(0);
-  const carouselCardWidth = Math.max(280, width - 60);
+  const carouselGap = 12;
+  const carouselSideInset = 6;
+  const carouselCardWidth = Math.min(Math.max(272, width * 0.78), width - 96);
   const visibleCaptures = useMemo(() => {
     return captures.filter((capture) => {
       if (activeFilter === 'all') return true;
@@ -500,7 +517,7 @@ function InboxScreen({
   }, [activeFilter, query, viewMode, visibleCaptures.length]);
 
   function updateCarouselIndex(offsetX: number) {
-    const nextIndex = Math.round(offsetX / (carouselCardWidth + 12));
+    const nextIndex = Math.round(offsetX / (carouselCardWidth + carouselGap));
     setCarouselIndex(Math.min(Math.max(nextIndex, 0), Math.max(visibleCaptures.length - 1, 0)));
   }
 
@@ -514,44 +531,46 @@ function InboxScreen({
         value={query}
       />
       <View style={styles.inboxToolbox}>
-        <View style={styles.filterRow}>
-          {inboxFilters.map((item) => {
-            const active = activeFilter === item.id;
-            return (
-              <Pressable
-                accessibilityRole="button"
-                key={item.id}
-                onPress={() => setActiveFilter(item.id)}
-                style={[
-                  styles.filterChip,
-                  {
-                    borderColor: active ? `${theme.colors.ink}22` : theme.colors.line,
-                    backgroundColor: active ? `${theme.colors.ink}0d` : theme.colors.surface,
-                  },
-                ]}
-              >
-                <Text style={[styles.filterChipText, { color: active ? theme.colors.ink : theme.colors.muted }]}>{item.label}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-        <View style={[styles.viewToggle, { borderColor: theme.colors.line, backgroundColor: theme.colors.surface }]}>
-          {[
-            { id: 'list' as const, label: '列表' },
-            { id: 'carousel' as const, label: '滑卡' },
-          ].map((item) => {
-            const active = viewMode === item.id;
-            return (
-              <Pressable
-                accessibilityRole="button"
-                key={item.id}
-                onPress={() => setViewMode(item.id)}
-                style={[styles.viewToggleItem, { backgroundColor: active ? theme.colors.ink : 'transparent' }]}
-              >
-                <Text style={[styles.viewToggleText, { color: active ? theme.colors.background : theme.colors.muted }]}>{item.label}</Text>
-              </Pressable>
-            );
-          })}
+        <View style={styles.inboxToolbarRow}>
+          <View style={styles.filterRow}>
+            {inboxFilters.map((item) => {
+              const active = activeFilter === item.id;
+              return (
+                <Pressable
+                  accessibilityRole="button"
+                  key={item.id}
+                  onPress={() => setActiveFilter(item.id)}
+                  style={[
+                    styles.filterChip,
+                    {
+                      borderColor: active ? `${theme.colors.ink}22` : theme.colors.line,
+                      backgroundColor: active ? `${theme.colors.ink}0d` : theme.colors.surface,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.filterChipText, { color: active ? theme.colors.ink : theme.colors.muted }]}>{item.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <View style={[styles.viewToggle, { borderColor: theme.colors.line, backgroundColor: theme.colors.surface }]}>
+            {[
+              { id: 'list' as const, label: '列表' },
+              { id: 'carousel' as const, label: '滑卡' },
+            ].map((item) => {
+              const active = viewMode === item.id;
+              return (
+                <Pressable
+                  accessibilityRole="button"
+                  key={item.id}
+                  onPress={() => setViewMode(item.id)}
+                  style={[styles.viewToggleItem, { backgroundColor: active ? theme.colors.ink : 'transparent' }]}
+                >
+                  <Text style={[styles.viewToggleText, { color: active ? theme.colors.background : theme.colors.muted }]}>{item.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
       </View>
       {visibleCaptures.length ? (
@@ -561,11 +580,10 @@ function InboxScreen({
               decelerationRate="fast"
               horizontal
               onMomentumScrollEnd={(event) => updateCarouselIndex(event.nativeEvent.contentOffset.x)}
-              pagingEnabled
               showsHorizontalScrollIndicator={false}
-              snapToInterval={carouselCardWidth + 12}
+              snapToInterval={carouselCardWidth + carouselGap}
               snapToAlignment="start"
-              contentContainerStyle={styles.carouselTrack}
+              contentContainerStyle={[styles.carouselTrack, { paddingHorizontal: carouselSideInset }]}
             >
               {visibleCaptures.map((capture) => {
                 const project = projects.find((item) => item.id === capture.projectId);
@@ -573,6 +591,7 @@ function InboxScreen({
                   <View key={capture.id} style={{ width: carouselCardWidth }}>
                     <CaptureCard
                       capture={capture}
+                      compact
                       project={project}
                       onOpenCapture={onOpenCapture}
                       onUpdateCapture={onUpdateCapture}
@@ -621,28 +640,42 @@ function InboxScreen({
 
 function CaptureCard({
   capture,
+  compact,
   project,
   onOpenCapture,
   onUpdateCapture,
   theme,
 }: {
   capture: Capture;
+  compact?: boolean;
   project?: Project;
   onOpenCapture: (capture: Capture) => void;
   onUpdateCapture: (id: string, patch: Partial<Capture>) => void;
   theme: SparkTheme;
 }) {
   return (
-    <Pressable key={capture.id} onPress={() => onOpenCapture(capture)} style={[styles.captureCard, panelStyle(theme)]}>
+    <Pressable
+      key={capture.id}
+      onPress={() => onOpenCapture(capture)}
+      style={[styles.captureCard, compact ? styles.captureCardCompact : null, panelStyle(theme)]}
+    >
       <View style={styles.rowBetween}>
-        <Text selectable numberOfLines={1} style={[styles.captureTitle, { color: theme.colors.ink, flex: 1 }]}>
+        <Text
+          selectable
+          numberOfLines={compact ? 2 : 1}
+          style={[styles.captureTitle, compact ? styles.captureTitleCompact : null, { color: theme.colors.ink, flex: 1 }]}
+        >
           {capture.title}
         </Text>
         <Text style={[styles.captureStatus, { color: theme.colors.coral, backgroundColor: `${theme.colors.coral}12` }]}>
           {statusLabel(capture.status)}
         </Text>
       </View>
-      <Text selectable numberOfLines={2} style={[styles.captureBody, { color: theme.colors.muted }]}>
+      <Text
+        selectable
+        numberOfLines={compact ? 3 : 2}
+        style={[styles.captureBody, compact ? styles.captureBodyCompact : null, { color: theme.colors.muted }]}
+      >
         {capture.body}
       </Text>
       <View style={styles.captureMetaRow}>
@@ -667,29 +700,45 @@ function WeaveScreen({
   clusters,
   compactPhone,
   onOpenCapture,
+  onOpenBoard,
   theme,
 }: {
   captures: Capture[];
   clusters: ReturnType<typeof buildWeaveClusters>;
   compactPhone: boolean;
   onOpenCapture: (capture: Capture) => void;
+  onOpenBoard: () => void;
   theme: SparkTheme;
 }) {
   return (
     <View style={styles.screenStack}>
       <View style={[styles.mapPanel, compactPhone ? styles.mapPanelCompact : null, panelStyle(theme)]}>
+        <View style={styles.mapPanelTopbar}>
+          <View>
+            <Text selectable style={[styles.fieldLabel, { color: theme.colors.ink }]}>编织总览</Text>
+            <Text selectable style={[styles.caption, { color: theme.colors.muted }]}>先用稳定思维模型看关系，再进入横屏调整。</Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            onPress={onOpenBoard}
+            style={[styles.iconAction, { borderColor: theme.colors.line, backgroundColor: theme.colors.surface }]}
+          >
+            <IconGlyph color={theme.colors.ink} name="expand" size={16} strokeWidth={1.9} />
+          </Pressable>
+        </View>
         <WeaveConstellation compact={compactPhone} clusters={clusters.slice(0, 5)} theme={theme} />
       </View>
 
       {clusters.map((cluster) => (
         <View key={cluster.id} style={[styles.card, panelStyle(theme)]}>
           <View style={styles.rowBetween}>
-            <Text selectable style={[styles.cardTitle, { color: theme.colors.ink }]}>
-              {cluster.title}
-            </Text>
-            <Text style={[styles.statusText, { color: theme.colors.gold }]}>
-              {Math.round(cluster.strength * 100)}%
-            </Text>
+            <View style={styles.clusterHeading}>
+              <Text selectable style={[styles.cardTitle, { color: theme.colors.ink }]}>
+                {cluster.title}
+              </Text>
+              <Text selectable style={[styles.caption, { color: theme.colors.coral }]}>{cluster.model}</Text>
+            </View>
+            <Text style={[styles.statusText, { color: theme.colors.gold }]}>{Math.round(cluster.strength * 100)}%</Text>
           </View>
           <Text selectable style={[styles.bodyText, { color: theme.colors.muted }]}>
             {cluster.reason}
@@ -723,17 +772,20 @@ function OutputsScreen({
   onFocusProject,
   onOpenProject,
   projects,
+  thoughts,
   theme,
 }: {
   captures: Capture[];
   onFocusProject: (project: Project) => void;
   onOpenProject: (project: Project) => void;
   projects: Project[];
+  thoughts: Thought[];
   theme: SparkTheme;
 }) {
   return (
     <View style={styles.screenStack}>
       {projects.map((project) => {
+        const projectThoughts = thoughts.filter((thought) => thought.projectId === project.id);
         const linked = captures.filter((capture) => capture.projectId === project.id);
         return (
           <Pressable key={project.id} onPress={() => onOpenProject(project)} style={[styles.card, panelStyle(theme)]}>
@@ -750,10 +802,25 @@ function OutputsScreen({
             </Text>
             <Progress value={project.progress} theme={theme} />
             <Text selectable style={[styles.caption, { color: theme.colors.muted }]}>
-              已连接 {linked.length} 条灵感
+              {projectThoughts.length} 条思维 · {linked.length} 条灵感
             </Text>
+            <View style={styles.thoughtPreviewStack}>
+              {projectThoughts.slice(0, 2).map((thought) => (
+                <View key={thought.id} style={[styles.thoughtPreviewCard, { borderColor: theme.colors.line, backgroundColor: theme.colors.surfaceSoft }]}>
+                  <View style={styles.rowBetween}>
+                    <Text selectable numberOfLines={1} style={[styles.fieldLabel, styles.thoughtPreviewTitle, { color: theme.colors.ink }]}>
+                      {thought.title}
+                    </Text>
+                    <Text style={[styles.caption, { color: theme.colors.coral }]}>{thought.model}</Text>
+                  </View>
+                  <Text selectable numberOfLines={2} style={[styles.caption, { color: theme.colors.muted }]}>
+                    {thought.brief}
+                  </Text>
+                </View>
+              ))}
+            </View>
             <View style={styles.actionRow}>
-              <MiniButton label="查看产物" onPress={() => onOpenProject(project)} theme={theme} />
+              <MiniButton label="查看项目" onPress={() => onOpenProject(project)} theme={theme} />
               <MiniButton label="进入专注" onPress={() => onFocusProject(project)} theme={theme} />
             </View>
           </Pressable>
@@ -1056,6 +1123,7 @@ function ProjectDetailSheet({
   theme,
   onClose,
   onFocusProject,
+  thoughts,
 }: {
   captures: Capture[];
   feedback: FeedbackEntry[];
@@ -1064,12 +1132,14 @@ function ProjectDetailSheet({
   theme: SparkTheme;
   onClose: () => void;
   onFocusProject: (project: Project) => void;
+  thoughts: Thought[];
 }) {
   if (!project) {
     return null;
   }
 
   const linked = captures.filter((capture) => capture.projectId === project.id);
+  const projectThoughts = thoughts.filter((thought) => thought.projectId === project.id);
   const feedbackCount = feedback.filter((item) => item.targetType === 'output' && item.targetId === project.id).length;
 
   return (
@@ -1082,6 +1152,22 @@ function ProjectDetailSheet({
       </Text>
       <Progress value={project.progress} theme={theme} />
       <TagRow tags={project.tags} theme={theme} />
+      <SectionHeader label="思维结构" theme={theme} />
+      {projectThoughts.map((thought) => {
+        const thoughtCaptures = captures.filter((capture) => thought.captureIds.includes(capture.id));
+        return (
+          <View key={thought.id} style={[styles.infoBlock, { borderColor: theme.colors.line, backgroundColor: theme.colors.surfaceSoft }]}>
+            <View style={styles.rowBetween}>
+              <Text selectable style={[styles.fieldLabel, { color: theme.colors.ink, flex: 1 }]}>{thought.title}</Text>
+              <Text style={[styles.caption, { color: theme.colors.coral }]}>{thought.model}</Text>
+            </View>
+            <Text selectable style={[styles.caption, { color: theme.colors.muted }]}>{thought.brief}</Text>
+            <Text selectable style={[styles.caption, { color: theme.colors.cobalt }]}>
+              连接 {thoughtCaptures.length} 条灵感
+            </Text>
+          </View>
+        );
+      })}
       <SectionHeader label="关联灵感" theme={theme} />
       {linked.slice(0, 4).map((capture) => (
         <View key={capture.id} style={[styles.linkRow, { borderColor: theme.colors.line }]}>
@@ -1099,7 +1185,7 @@ function ProjectDetailSheet({
         targetType="output"
         theme={theme}
       />
-      <PrimaryButton label="进入专注" onPress={() => onFocusProject(project)} theme={theme} />
+      <PrimaryButton label="进入项目专注" onPress={() => onFocusProject(project)} theme={theme} />
     </BaseSheet>
   );
 }
@@ -1184,17 +1270,20 @@ function FocusSheet({
   project,
   theme,
   onClose,
+  thoughts,
 }: {
   captures: Capture[];
   project: Project | null;
   theme: SparkTheme;
   onClose: () => void;
+  thoughts: Thought[];
 }) {
   if (!project) {
     return null;
   }
 
   const linked = captures.filter((capture) => capture.projectId === project.id && capture.status !== 'done');
+  const primaryThought = thoughts.find((thought) => thought.projectId === project.id && thought.status !== 'done');
   const task = linked[0];
 
   return (
@@ -1207,12 +1296,103 @@ function FocusSheet({
         <Text style={[styles.caption, { color: theme.colors.muted }]}>一轮深度推进</Text>
       </View>
       <InfoBlock label="当前项目" value={project.name} theme={theme} />
+      <InfoBlock label="当前思维" value={primaryThought?.title ?? '先整理一条思维主线'} theme={theme} />
       <InfoBlock label="上下文" value={task?.nextAction ?? project.brief} theme={theme} />
       <View style={styles.actionRow}>
         <MiniButton label="完成" onPress={onClose} theme={theme} />
         <MiniButton label="稍后" onPress={onClose} theme={theme} />
       </View>
     </BaseSheet>
+  );
+}
+
+function WeaveBoardSheet({
+  captures,
+  clusters,
+  onClose,
+  projects,
+  theme,
+  thoughts,
+  visible,
+}: {
+  captures: Capture[];
+  clusters: ReturnType<typeof buildWeaveClusters>;
+  onClose: () => void;
+  projects: Project[];
+  theme: SparkTheme;
+  thoughts: Thought[];
+  visible: boolean;
+}) {
+  return (
+    <Modal
+      animationType="slide"
+      onRequestClose={onClose}
+      presentationStyle="fullScreen"
+      supportedOrientations={['landscape-left', 'landscape-right']}
+      visible={visible}
+    >
+      <View style={[styles.landscapeShell, { backgroundColor: theme.colors.background }]}>
+        <View style={[styles.landscapeTopbar, { borderColor: theme.colors.line, backgroundColor: theme.colors.surface }]}>
+          <View>
+            <Text selectable style={[styles.sheetTitle, { color: theme.colors.ink }]}>编织工作台</Text>
+            <Text selectable style={[styles.caption, { color: theme.colors.muted }]}>
+              横屏先承担总览和结构调整，竖屏后续再做轻量优化。
+            </Text>
+          </View>
+          <MiniButton label="收起" onPress={onClose} theme={theme} />
+        </View>
+
+        <View style={styles.landscapeBody}>
+          <View style={[styles.landscapeBoard, { borderColor: theme.colors.line, backgroundColor: theme.colors.surface }]}>
+            <Text selectable style={[styles.fieldLabel, { color: theme.colors.ink }]}>关系总览</Text>
+            <WeaveConstellation clusters={clusters.slice(0, 5)} theme={theme} />
+          </View>
+
+          <ScrollView
+            contentContainerStyle={styles.landscapeSidebar}
+            showsVerticalScrollIndicator={false}
+            style={styles.landscapeSidebarPane}
+          >
+            <SectionHeader label="思维模型" theme={theme} />
+            {clusters.map((cluster) => (
+              <View key={cluster.id} style={[styles.infoBlock, { borderColor: theme.colors.line, backgroundColor: theme.colors.surfaceSoft }]}>
+                <View style={styles.rowBetween}>
+                  <Text selectable style={[styles.fieldLabel, { color: theme.colors.ink, flex: 1 }]}>{cluster.title}</Text>
+                  <Text style={[styles.caption, { color: theme.colors.coral }]}>{cluster.model}</Text>
+                </View>
+                <Text selectable style={[styles.caption, { color: theme.colors.muted }]}>{cluster.sharedProblem}</Text>
+                <Text selectable style={[styles.caption, { color: theme.colors.cobalt }]}>建议：{cluster.suggestedAction}</Text>
+              </View>
+            ))}
+
+            <SectionHeader label="项目 / 思维 / 灵感" theme={theme} />
+            {projects.map((project) => {
+              const projectThoughts = thoughts.filter((thought) => thought.projectId === project.id);
+              return (
+                <View key={project.id} style={[styles.infoBlock, { borderColor: theme.colors.line, backgroundColor: theme.colors.surfaceSoft }]}>
+                  <Text selectable style={[styles.fieldLabel, { color: theme.colors.ink }]}>{project.name}</Text>
+                  <Text selectable style={[styles.caption, { color: theme.colors.muted }]}>{project.brief}</Text>
+                  {projectThoughts.map((thought) => {
+                    const linkedCaptures = captures.filter((capture) => thought.captureIds.includes(capture.id));
+                    return (
+                      <View key={thought.id} style={[styles.thoughtLane, { borderColor: theme.colors.line }]}>
+                        <View style={styles.rowBetween}>
+                          <Text selectable style={[styles.caption, { color: theme.colors.ink, flex: 1 }]}>{thought.title}</Text>
+                          <Text style={[styles.caption, { color: theme.colors.coral }]}>{thought.model}</Text>
+                        </View>
+                        <Text selectable style={[styles.caption, { color: theme.colors.muted }]}>
+                          {linkedCaptures.length} 条灵感
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -1644,15 +1824,27 @@ const styles = StyleSheet.create({
     gap: 8,
     padding: 14,
   },
+  captureCardCompact: {
+    gap: 7,
+    padding: 12,
+  },
   captureTitle: {
     fontFamily: fonts.displayBold,
     fontSize: 19,
     lineHeight: 25,
   },
+  captureTitleCompact: {
+    fontSize: 17,
+    lineHeight: 23,
+  },
   captureBody: {
     fontFamily: fonts.body,
     fontSize: 13,
     lineHeight: 20,
+  },
+  captureBodyCompact: {
+    fontSize: 12,
+    lineHeight: 18,
   },
   captureStatus: {
     borderRadius: 999,
@@ -1676,11 +1868,12 @@ const styles = StyleSheet.create({
     paddingTop: 2,
   },
   carouselBlock: {
+    alignSelf: 'center',
     gap: 10,
+    width: '100%',
   },
   carouselTrack: {
     gap: 12,
-    paddingRight: 6,
   },
   carouselDots: {
     alignItems: 'center',
@@ -1758,9 +1951,16 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   filterRow: {
+    flex: 1,
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  inboxToolbarRow: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'space-between',
   },
   inboxToolbox: {
     gap: 10,
@@ -1781,7 +1981,6 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   viewToggle: {
-    alignSelf: 'flex-start',
     borderCurve: 'continuous',
     borderRadius: 999,
     borderWidth: 1,
@@ -1803,6 +2002,79 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 12,
     fontWeight: '700',
+  },
+  iconAction: {
+    alignItems: 'center',
+    borderCurve: 'continuous',
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  mapPanelTopbar: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  clusterHeading: {
+    flex: 1,
+    gap: 2,
+  },
+  thoughtPreviewStack: {
+    gap: 8,
+  },
+  thoughtPreviewCard: {
+    borderCurve: 'continuous',
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 6,
+    padding: 10,
+  },
+  thoughtPreviewTitle: {
+    flex: 1,
+    fontSize: 14,
+  },
+  thoughtLane: {
+    borderTopWidth: 1,
+    gap: 4,
+    marginTop: 8,
+    paddingTop: 8,
+  },
+  landscapeShell: {
+    flex: 1,
+    padding: 18,
+  },
+  landscapeTopbar: {
+    alignItems: 'center',
+    borderCurve: 'continuous',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+    padding: 14,
+  },
+  landscapeBody: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 14,
+  },
+  landscapeBoard: {
+    borderCurve: 'continuous',
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1.2,
+    gap: 12,
+    padding: 14,
+  },
+  landscapeSidebarPane: {
+    flex: 1,
+  },
+  landscapeSidebar: {
+    gap: 12,
+    paddingBottom: 24,
   },
   actionRow: {
     flexDirection: 'row',
